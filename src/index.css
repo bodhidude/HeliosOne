@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+@theme {
+  --color-deep-space: #0B0D17;
+  --color-slate-800: #1e293b;
+  --color-aviation-orange: #FC3D21;
+  --color-alert-green: #10B981;
+  --color-alert-yellow: #F59E0B;
+  --color-alert-red: #EF4444;
+
+  --font-mono: "JetBrains Mono", "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+
+  --animate-pulse-slow: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  --animate-pulse-fast: pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  --animate-fade-in: fadeIn 0.2s ease-out;
+
+  @keyframes fadeIn {
+    0% { opacity: 0; transform: scale(0.95); }
+    100% { opacity: 1; transform: scale(1); }
+  }
+}
+
+@layer base {
+  body {
+    @apply bg-deep-space text-white font-mono antialiased;
+  }
+}
+
+@layer components {
+  .glass-panel {
+    @apply bg-white/5 border border-slate-800 backdrop-blur-sm rounded-lg p-4 transition-all duration-300;
+  }
+}
