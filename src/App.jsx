@@ -4,12 +4,13 @@ import Header from './components/Header';
 import HeroSection from './components/HeroSection';
 import ModuleGrid from './components/ModuleGrid';
 import Modal from './components/Modal';
-import { generateSummary } from './services/ai';
+import { generateSummary, sendChatMessage } from './services/ai';
 
 function App() {
   const [data, setData] = useState({ plasma: [], mag: [], xrays: [], kp: [], protons: [], f107: [] });
-  const [aiSummary, setAiSummary] = useState(null);
+  const [chatHistory, setChatHistory] = useState([]);
   const [isSummarizing, setIsSummarizing] = useState(false);
+  const [isAiResponding, setIsAiResponding] = useState(false);
   const [lastSync, setLastSync] = useState(null);
   const [loading, setLoading] = useState(true);
   const [modalContent, setModalContent] = useState(null);
@@ -35,8 +36,9 @@ function App() {
       setLastSync(new Date().toISOString());
       
       setIsSummarizing(true);
+      setChatHistory([]);
       const summary = await generateSummary(fetchedData, aiProvider, aiModel);
-      setAiSummary(summary);
+      setChatHistory([{ role: 'assistant', content: summary }]);
       setIsSummarizing(false);
       isLoaded.current = true;
     } catch (error) {
@@ -50,15 +52,39 @@ function App() {
   const regenerateSummary = useCallback(async () => {
     if (!data.plasma.length && !data.kp.length) return;
     setIsSummarizing(true);
+    setChatHistory([]);
     try {
       const summary = await generateSummary(data, aiProvider, aiModel);
-      setAiSummary(summary);
+      setChatHistory([{ role: 'assistant', content: summary }]);
     } catch (error) {
       console.error("Failed to regenerate summary:", error);
     } finally {
       setIsSummarizing(false);
     }
   }, [data, aiProvider, aiModel]);
+
+  // Handle follow-up messages
+  const handleSendMessage = useCallback(async (text) => {
+    if (!text.trim() || isAiResponding) return;
+
+    const userMessage = { role: 'user', content: text };
+    const updatedHistory = [...chatHistory, userMessage];
+    setChatHistory(updatedHistory);
+    setIsAiResponding(true);
+
+    try {
+      const reply = await sendChatMessage(data, updatedHistory, aiProvider, aiModel);
+      setChatHistory(prev => [...prev, { role: 'assistant', content: reply }]);
+    } catch (error) {
+      console.error("Chat error:", error);
+      setChatHistory(prev => [
+        ...prev,
+        { role: 'assistant', content: `[ ERROR: CONNECTION TO HELIOS-AI LOST. ${error.message.toUpperCase()} ]` }
+      ]);
+    } finally {
+      setIsAiResponding(false);
+    }
+  }, [chatHistory, data, aiProvider, aiModel, isAiResponding]);
 
   // Initial load
   useEffect(() => {
@@ -87,8 +113,10 @@ function App() {
       <main className="flex-1 max-w-7xl w-full mx-auto space-y-8">
         <HeroSection 
           kpData={data.kp} 
-          aiSummary={aiSummary} 
+          chatHistory={chatHistory}
           isSummarizing={isSummarizing}
+          isAiResponding={isAiResponding}
+          onSendMessage={handleSendMessage}
           onOpenModal={setModalContent} 
         />
         <ModuleGrid data={data} onOpenModal={setModalContent} />

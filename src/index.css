@@ -30,4 +30,24 @@
   .glass-panel {
     @apply bg-white/5 border border-slate-800 backdrop-blur-sm rounded-lg p-4 transition-all duration-300;
   }
+
+  .custom-scrollbar {
+    --scrollbar-thumb: rgba(252, 61, 33, 0.4);
+    --scrollbar-track: rgba(255, 255, 255, 0.03);
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+    scrollbar-width: thin;
+  }
+  
+  @supports not (scrollbar-color: auto) {
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 4px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: var(--scrollbar-thumb);
+      border-radius: 2px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: var(--scrollbar-track);
+    }
+  }
 }

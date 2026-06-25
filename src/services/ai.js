@@ -1,4 +1,4 @@
-export async function generateSummary(dashboardData, provider = null, model = null) {
+function extractTelemetry(dashboardData) {
   const getLatest = (arr, key) => {
     if (!arr || !arr.length) return 'N/A';
     for (let i = arr.length - 1; i >= 0; i--) {
@@ -17,13 +17,17 @@ export async function generateSummary(dashboardData, provider = null, model = nu
   
   const f107 = getLatest(dashboardData.f107 || [], 'flux');
 
-  const telemetry = {
+  return {
     kp,
     windSpeed,
     bz,
     protonFlux,
     f107
   };
+}
+
+export async function generateSummary(dashboardData, provider = null, model = null) {
+  const telemetry = extractTelemetry(dashboardData);
 
   try {
     const response = await fetch('/api/summary', {
@@ -46,8 +50,38 @@ export async function generateSummary(dashboardData, provider = null, model = nu
     const json = await response.json();
     return json.summary;
   } catch (err) {
-    console.error("AI Generation Failed:", err);
+    console.error("AI Summary Generation Failed:", err);
     return err.message || "HELIOS-AI ENCOUNTERED A TELEMETRY ERROR. SUMMARY UNAVAILABLE.";
+  }
+}
+
+export async function sendChatMessage(dashboardData, messages, provider = null, model = null) {
+  const telemetry = extractTelemetry(dashboardData);
+
+  try {
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        telemetry,
+        messages,
+        provider,
+        model
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || `API Error: ${response.status}`);
+    }
+
+    const json = await response.json();
+    return json.message;
+  } catch (err) {
+    console.error("AI Chat Failed:", err);
+    throw err;
   }
 }
 

@@ -43,6 +43,13 @@ class SummaryRequest(BaseModel):
     provider: Optional[str] = None
     model: Optional[str] = None
 
+class ChatRequest(BaseModel):
+    telemetry: Dict[str, Any]
+    messages: list[Dict[str, str]]
+    provider: Optional[str] = None
+    model: Optional[str] = None
+
+
 @app.get("/api/status")
 async def get_status():
     """
@@ -157,6 +164,64 @@ async def generate_summary(payload: SummaryRequest):
             raise HTTPException(
                 status_code=500,
                 detail=f"HELIOS-AI generation failed: {err_msg}"
+            )
+
+@app.post("/api/chat")
+async def chat_interaction(payload: ChatRequest):
+    """
+    Handles follow-up chat turns using aisuite.
+    """
+    provider = payload.provider or os.getenv("LLM_PROVIDER", "ollama")
+    model_name = payload.model or os.getenv("LLM_MODEL", "gemma4:e4b")
+    full_model_str = f"{provider}:{model_name}"
+    
+    logger.info(f"Chat interaction using LLM: {full_model_str}")
+    
+    telemetry = payload.telemetry
+    payload_str = json.dumps(telemetry, indent=2)
+    
+    if provider == "gemini":
+        gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("VITE_GEMINI_API_KEY")
+        if gemini_key:
+            os.environ["GEMINI_API_KEY"] = gemini_key
+
+    # Prompt focuses on answering space weather telemetry questions concisely
+    system_prompt = (
+        "You are the HELIOS-1 AI Analyst, a helpful space weather assistant. "
+        "Assist the operator with their questions about the current space weather telemetry and status. "
+        "Use a calm 'NASA Mission Control' tone. Keep your responses concise and professional (no more than 3-4 sentences).\n\n"
+        f"Current Space Weather Telemetry:\n{payload_str}"
+    )
+    
+    messages_payload = [{"role": "system", "content": system_prompt}] + payload.messages
+    
+    try:
+        response = client.chat.completions.create(
+            model=full_model_str,
+            messages=messages_payload,
+            temperature=0.7
+        )
+        
+        reply_text = response.choices[0].message.content
+        logger.info("Chat response successfully generated.")
+        return {"message": reply_text, "model_used": full_model_str}
+        
+    except Exception as e:
+        logger.error(f"Chat generation failed for {full_model_str}: {e}")
+        err_msg = str(e)
+        if provider == "ollama":
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    f"HELIOS-AI telemetry offline. Local Ollama server returned an error: '{err_msg}'. "
+                    f"Please make sure Ollama is running and you have pulled the model '{model_name}' "
+                    f"using: 'ollama pull {model_name}'"
+                )
+            )
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail=f"HELIOS-AI chat generation failed: {err_msg}"
             )
 
 if __name__ == "__main__":
