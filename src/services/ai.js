@@ -1,13 +1,6 @@
-function extractTelemetry(dashboardData) {
-  const getLatest = (arr, key) => {
-    if (!arr || !arr.length) return 'N/A';
-    for (let i = arr.length - 1; i >= 0; i--) {
-      const val = parseFloat(arr[i][key]);
-      if (!isNaN(val)) return val;
-    }
-    return 'N/A';
-  };
+import { getLatest } from './utils';
 
+function extractTelemetry(dashboardData) {
   const kp = getLatest(dashboardData.kp, 'Kp');
   const windSpeed = getLatest(dashboardData.plasma, 'speed');
   const bz = getLatest(dashboardData.mag, 'bz_gsm');
@@ -18,23 +11,28 @@ function extractTelemetry(dashboardData) {
   const f107 = getLatest(dashboardData.f107 || [], 'flux');
 
   return {
-    kp,
-    windSpeed,
-    bz,
-    protonFlux,
-    f107
+    kp: kp ?? 'N/A',
+    windSpeed: windSpeed ?? 'N/A',
+    bz: bz ?? 'N/A',
+    protonFlux: protonFlux ?? 'N/A',
+    f107: f107 ?? 'N/A'
   };
 }
 
-export async function generateSummary(dashboardData, provider = null, model = null) {
+export async function generateSummary(dashboardData, provider = null, model = null, keys = {}) {
   const telemetry = extractTelemetry(dashboardData);
+
+  const headers = {
+    'Content-Type': 'application/json',
+  };
+  if (keys.geminiKey) headers['X-Gemini-Key'] = keys.geminiKey;
+  if (keys.openaiKey) headers['X-OpenAI-Key'] = keys.openaiKey;
+  if (keys.anthropicKey) headers['X-Anthropic-Key'] = keys.anthropicKey;
 
   try {
     const response = await fetch('/api/summary', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify({
         telemetry,
         provider,
@@ -51,19 +49,24 @@ export async function generateSummary(dashboardData, provider = null, model = nu
     return json.summary;
   } catch (err) {
     console.error("AI Summary Generation Failed:", err);
-    return err.message || "HELIOS-AI ENCOUNTERED A TELEMETRY ERROR. SUMMARY UNAVAILABLE.";
+    throw err;
   }
 }
 
-export async function sendChatMessage(dashboardData, messages, provider = null, model = null) {
+export async function sendChatMessage(dashboardData, messages, provider = null, model = null, keys = {}) {
   const telemetry = extractTelemetry(dashboardData);
+
+  const headers = {
+    'Content-Type': 'application/json',
+  };
+  if (keys.geminiKey) headers['X-Gemini-Key'] = keys.geminiKey;
+  if (keys.openaiKey) headers['X-OpenAI-Key'] = keys.openaiKey;
+  if (keys.anthropicKey) headers['X-Anthropic-Key'] = keys.anthropicKey;
 
   try {
     const response = await fetch('/api/chat', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify({
         telemetry,
         messages,

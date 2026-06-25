@@ -1,6 +1,36 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { RefreshCw, Cpu, Settings, Check, AlertTriangle, Cloud, Terminal } from 'lucide-react';
 import { fetchAiStatus } from '../services/ai';
+
+const PROVIDER_MODELS = {
+  gemini: [
+    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
+    { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
+    { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash' },
+    { id: 'gemini-2.0-pro-exp-02-05', name: 'Gemini 2.0 Pro (Exp)' },
+    { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash' },
+    { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro' },
+    { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash' },
+    { id: 'gemini-3.1-pro', name: 'Gemini 3.1 Pro' }
+  ],
+  openai: [
+    { id: 'gpt-4o-mini', name: 'GPT-4o Mini' },
+    { id: 'gpt-4o', name: 'GPT-4o' },
+    { id: 'o1-mini', name: 'o1 Mini' },
+    { id: 'o1', name: 'o1' },
+    { id: 'o3-mini', name: 'o3 Mini' },
+    { id: 'gpt-5.5', name: 'GPT-5.5 Flagship' },
+    { id: 'gpt-5.4-mini', name: 'GPT-5.4 Mini' }
+  ],
+  anthropic: [
+    { id: 'claude-3-5-sonnet', name: 'Claude 3.5 Sonnet' },
+    { id: 'claude-3-5-haiku', name: 'Claude 3.5 Haiku' },
+    { id: 'claude-3-opus', name: 'Claude 3 Opus' },
+    { id: 'claude-4.8-opus', name: 'Claude 4.8 Opus' },
+    { id: 'claude-4.6-sonnet', name: 'Claude 4.6 Sonnet' },
+    { id: 'claude-4.5-haiku', name: 'Claude 4.5 Haiku' }
+  ]
+};
 
 export default function Header({ 
   lastSync, 
@@ -9,12 +39,20 @@ export default function Header({
   aiProvider, 
   setAiProvider, 
   aiModel, 
-  setAiModel 
+  setAiModel,
+  geminiKey,
+  setGeminiKey,
+  openaiKey,
+  setOpenaiKey,
+  anthropicKey,
+  setAnthropicKey,
+  saveKeys,
+  setSaveKeys
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [backendStatus, setBackendStatus] = useState(null);
   const [checkingStatus, setCheckingStatus] = useState(false);
-  const [customModel, setCustomModel] = useState(aiModel);
+  const [customModelInput, setCustomModelInput] = useState('');
   const dropdownRef = useRef(null);
 
   // Check the status of the local Python backend and Ollama
@@ -26,10 +64,23 @@ export default function Header({
   };
 
   useEffect(() => {
-    checkStatus();
-    // Auto-refresh AI status every 15 seconds
-    const interval = setInterval(checkStatus, 15000);
-    return () => clearInterval(interval);
+    let active = true;
+    const fetchStatus = async () => {
+      setCheckingStatus(true);
+      const status = await fetchAiStatus();
+      if (active) {
+        setBackendStatus(status);
+        setCheckingStatus(false);
+      }
+    };
+
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 15000);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
   }, []);
 
   // Close dropdown if user clicks outside of it
@@ -41,18 +92,23 @@ export default function Header({
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [dropdownRef]);
+  }, []);
 
-  // Sync custom model state
-  useEffect(() => {
-    setCustomModel(aiModel);
-  }, [aiModel]);
+  const isCloudProvider = aiProvider !== 'ollama';
+  const currentCloudModels = PROVIDER_MODELS[aiProvider] || [];
+
+  // Derive selectedModelOption from aiModel (no need for separate state or effects)
+  const selectedModelOption = useMemo(() => {
+    if (aiProvider === 'ollama') return '';
+    const models = PROVIDER_MODELS[aiProvider] || [];
+    return models.some(m => m.id === aiModel) ? aiModel : 'custom';
+  }, [aiModel, aiProvider]);
 
   const handleProviderChange = (provider) => {
     setAiProvider(provider);
     // Auto-set sensible default models for cloud providers if changed
     if (provider === 'gemini') {
-      setAiModel('gemini-2.0-flash');
+      setAiModel('gemini-2.5-flash');
     } else if (provider === 'openai') {
       setAiModel('gpt-4o-mini');
     } else if (provider === 'anthropic') {
@@ -68,10 +124,20 @@ export default function Header({
     }
   };
 
+  const handleCloudModelChange = (e) => {
+    const val = e.target.value;
+    if (val !== 'custom') {
+      setAiModel(val);
+      setCustomModelInput(val);
+    } else {
+      setCustomModelInput(aiModel);
+    }
+  };
+
   const handleApplyCustomModel = (e) => {
     e.preventDefault();
-    if (customModel.trim()) {
-      setAiModel(customModel.trim());
+    if (customModelInput.trim()) {
+      setAiModel(customModelInput.trim());
     }
   };
 
@@ -138,7 +204,7 @@ export default function Header({
       {isOpen && (
         <div 
           ref={dropdownRef}
-          className="absolute right-6 top-18 z-50 w-85 glass-panel border-aviation-orange/30 shadow-[0_12px_32px_rgba(11,13,23,0.8),_0_0_15px_rgba(252,61,33,0.15)] p-5 space-y-5 animate-fade-in text-left text-slate-100"
+          className="absolute right-6 top-18 z-50 w-85 bg-slate-950 border border-aviation-orange/30 rounded-lg shadow-[0_12px_32px_rgba(0,0,0,0.95),_0_0_15px_rgba(252,61,33,0.15)] p-5 space-y-5 animate-fade-in text-left text-slate-100"
         >
           <div className="flex justify-between items-center border-b border-slate-800 pb-2">
             <span className="font-bold tracking-widest text-xs text-aviation-orange">LLM CONTROL CENTER</span>
@@ -182,6 +248,44 @@ export default function Header({
             </div>
           </div>
 
+          {/* Conditional API Key Input for Cloud Providers */}
+          {aiProvider !== 'ollama' && (
+            <div className="space-y-2 bg-slate-900/60 p-3 border border-slate-800/80 rounded">
+              <div className="flex justify-between items-center">
+                <label className="text-[10px] tracking-wider text-slate-400 font-bold uppercase">Provider API Key</label>
+                <span className="text-[8px] text-slate-500 font-bold uppercase">{saveKeys ? 'persistent' : 'session'}</span>
+              </div>
+              <input
+                type="password"
+                value={
+                  aiProvider === 'gemini' ? geminiKey :
+                  aiProvider === 'openai' ? openaiKey :
+                  anthropicKey
+                }
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (aiProvider === 'gemini') setGeminiKey(val);
+                  else if (aiProvider === 'openai') setOpenaiKey(val);
+                  else setAnthropicKey(val);
+                }}
+                placeholder={`Enter ${aiProvider.toUpperCase()} API Key...`}
+                className="w-full bg-slate-950 border border-slate-850 text-slate-200 px-3 py-1.5 rounded text-xs font-mono focus:outline-none focus:border-aviation-orange"
+              />
+              <div className="flex items-center space-x-1.5 mt-1.5">
+                <input 
+                  type="checkbox"
+                  id="save-keys-toggle"
+                  checked={saveKeys}
+                  onChange={(e) => setSaveKeys(e.target.checked)}
+                  className="rounded border-slate-800 bg-slate-950 text-aviation-orange focus:ring-0 w-3 h-3 cursor-pointer animate-none"
+                />
+                <label htmlFor="save-keys-toggle" className="text-[10px] text-slate-450 cursor-pointer font-bold select-none leading-none">
+                  Save key in browser storage (unencrypted)
+                </label>
+              </div>
+            </div>
+          )}
+
           {/* Ollama specific details */}
           {aiProvider === 'ollama' && (
             <div className="bg-slate-950/60 border border-slate-800/80 p-3 rounded space-y-2 text-xs">
@@ -223,55 +327,66 @@ export default function Header({
             </div>
           )}
 
-          {/* Model selection Input */}
+          {/* Model selection Dropdown */}
           <div className="space-y-2">
             <div className="flex justify-between items-center">
-              <label className="text-[10px] tracking-wider text-slate-400 font-bold uppercase">Model Specifier</label>
-              {aiProvider !== 'ollama' && (
+              <label className="text-[10px] tracking-wider text-slate-400 font-bold uppercase">
+                {isCloudProvider ? 'Select Model' : 'Model Specifier'}
+              </label>
+              {isCloudProvider && (
                 <span className="text-[10px] text-slate-500 flex items-center gap-0.5">
                   <Cloud className="w-3 h-3" /> requires API Key in .env
                 </span>
               )}
             </div>
 
-            <form onSubmit={handleApplyCustomModel} className="flex gap-1.5">
-              <input
-                type="text"
-                value={customModel}
-                onChange={(e) => setCustomModel(e.target.value)}
-                placeholder="e.g. gemma4:e4b, gpt-4o-mini"
-                className="flex-1 bg-slate-950 border border-slate-800 text-slate-200 px-3 py-1.5 rounded text-xs font-mono focus:outline-none focus:border-aviation-orange"
-              />
-              <button
-                type="submit"
-                className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded text-xs border border-slate-700 cursor-pointer font-bold transition-all active:scale-95"
-              >
-                APPLY
-              </button>
-            </form>
+            {isCloudProvider ? (
+              <div className="space-y-2">
+                <select
+                  value={selectedModelOption}
+                  onChange={handleCloudModelChange}
+                  className="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded p-1.5 text-xs font-mono font-semibold focus:outline-none focus:border-aviation-orange cursor-pointer"
+                >
+                  {currentCloudModels.map(m => (
+                    <option key={m.id} value={m.id}>{m.name} ({m.id})</option>
+                  ))}
+                  <option value="custom">Custom Model...</option>
+                </select>
 
-            {/* Model Suggestions */}
-            {aiProvider !== 'ollama' && (
-              <div className="flex flex-wrap gap-1 mt-1.5">
-                {(aiProvider === 'gemini' 
-                  ? ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro']
-                  : aiProvider === 'openai'
-                  ? ['gpt-4o-mini', 'gpt-4o', 'o1-mini']
-                  : ['claude-3-5-sonnet', 'claude-3-5-haiku', 'claude-3-opus']
-                ).map(sug => (
-                  <button
-                    key={sug}
-                    type="button"
-                    onClick={() => {
-                      setCustomModel(sug);
-                      setAiModel(sug);
-                    }}
-                    className="text-[10px] font-mono bg-slate-900 border border-slate-800 text-slate-400 px-1.5 py-0.5 rounded hover:text-slate-200 hover:border-slate-700 cursor-pointer transition-colors"
-                  >
-                    {sug}
-                  </button>
-                ))}
+                {selectedModelOption === 'custom' && (
+                  <form onSubmit={handleApplyCustomModel} className="flex gap-1.5 animate-fade-in">
+                    <input
+                      type="text"
+                      value={customModelInput || ''}
+                      onChange={(e) => setCustomModelInput(e.target.value)}
+                      placeholder="Enter custom model ID..."
+                      className="flex-1 bg-slate-950 border border-slate-800 text-slate-200 px-3 py-1.5 rounded text-xs font-mono focus:outline-none focus:border-aviation-orange"
+                    />
+                    <button
+                      type="submit"
+                      className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded text-xs border border-slate-700 cursor-pointer font-bold transition-all active:scale-95"
+                    >
+                      APPLY
+                    </button>
+                  </form>
+                )}
               </div>
+            ) : (
+              <form onSubmit={handleApplyCustomModel} className="flex gap-1.5">
+                <input
+                  type="text"
+                  value={customModelInput || aiModel}
+                  onChange={(e) => setCustomModelInput(e.target.value)}
+                  placeholder="e.g. gemma4:e4b"
+                  className="flex-1 bg-slate-950 border border-slate-800 text-slate-200 px-3 py-1.5 rounded text-xs font-mono focus:outline-none focus:border-aviation-orange"
+                />
+                <button
+                  type="submit"
+                  className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded text-xs border border-slate-700 cursor-pointer font-bold transition-all active:scale-95"
+                >
+                  APPLY
+                </button>
+              </form>
             )}
           </div>
 

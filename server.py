@@ -1,8 +1,9 @@
 import os
+import asyncio
 import json
 import logging
 from typing import Optional, Dict, Any
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -25,10 +26,15 @@ app = FastAPI(
 # Enable CORS for frontend integration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:4173",
+        "http://127.0.0.1:4173",
+    ],
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type", "X-Gemini-Key", "X-OpenAI-Key", "X-Anthropic-Key"],
 )
 
 # Ensure OPENAI_API_KEY is configured as a dummy value if using Ollama
@@ -37,6 +43,32 @@ if "OPENAI_API_KEY" not in os.environ:
 
 # Initialize aisuite client
 client = ai.Client()
+
+# Helper to build dynamic client configuration from headers
+def get_aisuite_client(
+    provider: str,
+    x_gemini_key: Optional[str] = None,
+    x_openai_key: Optional[str] = None,
+    x_anthropic_key: Optional[str] = None
+) -> ai.Client:
+    config = {}
+    # Use header keys if provided, otherwise fall back to .env keys
+    if provider == "gemini":
+        key = x_gemini_key or os.getenv("GEMINI_API_KEY")
+        if key:
+            config["gemini"] = {"api_key": key}
+    if provider == "openai" or x_openai_key:
+        key = x_openai_key or os.getenv("OPENAI_API_KEY")
+        if key:
+            config["openai"] = {"api_key": key}
+    if provider == "anthropic" or x_anthropic_key:
+        key = x_anthropic_key or os.getenv("ANTHROPIC_API_KEY")
+        if key:
+            config["anthropic"] = {"api_key": key}
+    
+    if config:
+        return ai.Client(config)
+    return client
 
 class SummaryRequest(BaseModel):
     telemetry: Dict[str, Any]
@@ -95,12 +127,20 @@ async def get_status():
     }
 
 @app.post("/api/summary")
-async def generate_summary(payload: SummaryRequest):
+async def generate_summary(
+    payload: SummaryRequest,
+    x_gemini_key: Optional[str] = Header(None),
+    x_openai_key: Optional[str] = Header(None),
+    x_anthropic_key: Optional[str] = Header(None)
+):
     """
     Generates a space weather summary using aisuite.
     """
     # Determine which provider and model to use
     provider = payload.provider or os.getenv("LLM_PROVIDER", "ollama")
+
+    # Get aisuite client with appropriate keys (no os.environ mutation)
+    local_client = get_aisuite_client(provider, x_gemini_key, x_openai_key, x_anthropic_key)
     model_name = payload.model or os.getenv("LLM_MODEL", "gemma4:e4b")
     
     # Construct the full model string required by aisuite (provider:model)
@@ -123,17 +163,9 @@ async def generate_summary(payload: SummaryRequest):
     
     user_prompt = f"Dashboard Data: {payload_str}\n\nSummary:"
     
-    # Configure provider specific settings if needed
-    # For Ollama, the model endpoint needs to know where it is running.
-    # aisuite's openai adapter automatically uses the standard localhost:11434 endpoint if provider is ollama.
-    # If the provider is gemini, aisuite wraps google-genai, which expects GEMINI_API_KEY. We copy the VITE one to GEMINI_API_KEY.
-    if provider == "gemini":
-        gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("VITE_GEMINI_API_KEY")
-        if gemini_key:
-            os.environ["GEMINI_API_KEY"] = gemini_key
-
     try:
-        response = client.chat.completions.create(
+        response = await asyncio.to_thread(
+            local_client.chat.completions.create,
             model=full_model_str,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -167,11 +199,19 @@ async def generate_summary(payload: SummaryRequest):
             )
 
 @app.post("/api/chat")
-async def chat_interaction(payload: ChatRequest):
+async def chat_interaction(
+    payload: ChatRequest,
+    x_gemini_key: Optional[str] = Header(None),
+    x_openai_key: Optional[str] = Header(None),
+    x_anthropic_key: Optional[str] = Header(None)
+):
     """
     Handles follow-up chat turns using aisuite.
     """
     provider = payload.provider or os.getenv("LLM_PROVIDER", "ollama")
+
+    # Get aisuite client with appropriate keys (no os.environ mutation)
+    local_client = get_aisuite_client(provider, x_gemini_key, x_openai_key, x_anthropic_key)
     model_name = payload.model or os.getenv("LLM_MODEL", "gemma4:e4b")
     full_model_str = f"{provider}:{model_name}"
     
@@ -180,11 +220,6 @@ async def chat_interaction(payload: ChatRequest):
     telemetry = payload.telemetry
     payload_str = json.dumps(telemetry, indent=2)
     
-    if provider == "gemini":
-        gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("VITE_GEMINI_API_KEY")
-        if gemini_key:
-            os.environ["GEMINI_API_KEY"] = gemini_key
-
     # Prompt focuses on answering space weather telemetry questions concisely
     system_prompt = (
         "You are the HELIOS-1 AI Analyst, a helpful space weather assistant. "
@@ -196,7 +231,8 @@ async def chat_interaction(payload: ChatRequest):
     messages_payload = [{"role": "system", "content": system_prompt}] + payload.messages
     
     try:
-        response = client.chat.completions.create(
+        response = await asyncio.to_thread(
+            local_client.chat.completions.create,
             model=full_model_str,
             messages=messages_payload,
             temperature=0.7
