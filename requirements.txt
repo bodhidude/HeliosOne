@@ -1,5 +1,5 @@
 docstring-parser>=0.18.0
-aisuite>=0.1.6
+aisuite[all]>=0.1.6
 openai>=1.107.0
 fastapi>=0.115.0
 uvicorn>=0.30.0

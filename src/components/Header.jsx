@@ -80,7 +80,7 @@ export default function Header({
   const ollamaModels = backendStatus?.ollama?.available_models || [];
 
   return (
-    <header className="relative flex flex-col md:flex-row justify-between items-center glass-panel border-aviation-orange/20 py-4 px-6 gap-4">
+    <header className="relative z-50 flex flex-col md:flex-row justify-between items-center glass-panel border-aviation-orange/20 py-4 px-6 gap-4">
       <div className="flex flex-col md:flex-row items-center gap-4">
         <h1 className="text-xl md:text-2xl font-bold tracking-widest text-slate-100 flex items-center">
           HELIOS-1 <span className="text-aviation-orange mx-2">//</span> SPACE WEATHER TELEMETRY
